@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -11,9 +11,30 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Users, Settings, Brain, Shield, Plus, Edit, Trash2 } from "lucide-react"
+import { getSecuritySummary } from "@/lib/profile"
 
 export default function AdministrationPage() {
   const [selectedUser, setSelectedUser] = useState<string | null>(null)
+  const [security, setSecurity] = useState<{
+    password_last_changed_at?: string
+    recent_events?: { type: string; message?: string; created_at: string }[]
+  } | null>(null)
+
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        const s = await getSecuritySummary()
+        if (!mounted) return
+        setSecurity(s)
+      } catch (e) {
+        // ignore errors, keep static placeholders
+      }
+    })()
+    return () => {
+      mounted = false
+    }
+  }, [])
 
   const users = [
     {
@@ -429,34 +450,38 @@ export default function AdministrationPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Active Sessions</CardTitle>
+                <CardTitle className="text-sm font-medium">Password Last Changed</CardTitle>
                 <Shield className="h-4 w-4 text-secondary" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">18</div>
-                <p className="text-xs text-muted-foreground">Current user sessions</p>
+                <div className="text-2xl font-bold">
+                  {security?.password_last_changed_at
+                    ? new Date(security.password_last_changed_at).toLocaleDateString()
+                    : "—"}
+                </div>
+                <p className="text-xs text-muted-foreground">Account password rotation</p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Failed Logins</CardTitle>
+                <CardTitle className="text-sm font-medium">Recent Security Events</CardTitle>
                 <Shield className="h-4 w-4 text-warning" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">3</div>
-                <p className="text-xs text-muted-foreground">Last 24 hours</p>
+                <div className="text-2xl font-bold">{security?.recent_events?.length ?? 0}</div>
+                <p className="text-xs text-muted-foreground">Last 30 days</p>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Security Score</CardTitle>
+                <CardTitle className="text-sm font-medium">Audit Logging</CardTitle>
                 <Shield className="h-4 w-4 text-secondary" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">A+</div>
-                <p className="text-xs text-muted-foreground">Excellent security posture</p>
+                <div className="text-2xl font-bold">Enabled</div>
+                <p className="text-xs text-muted-foreground">System event tracking</p>
               </CardContent>
             </Card>
           </div>
@@ -468,32 +493,6 @@ export default function AdministrationPage() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label className="text-base">Two-factor authentication required</Label>
-                    <div className="text-sm text-muted-foreground">Require 2FA for all user accounts</div>
-                  </div>
-                  <Switch defaultChecked />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label className="text-base">Session timeout</Label>
-                    <div className="text-sm text-muted-foreground">Automatically log out inactive users</div>
-                  </div>
-                  <Select defaultValue="30">
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="15">15 minutes</SelectItem>
-                      <SelectItem value="30">30 minutes</SelectItem>
-                      <SelectItem value="60">1 hour</SelectItem>
-                      <SelectItem value="120">2 hours</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
                     <Label className="text-base">IP whitelist enabled</Label>
@@ -520,51 +519,33 @@ export default function AdministrationPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <div className="flex items-start gap-4 p-3 border rounded-lg">
-                  <div className="w-2 h-2 bg-secondary rounded-full mt-2"></div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <p className="font-medium">Successful login</p>
-                      <span className="text-sm text-muted-foreground">2 minutes ago</span>
+                {(security?.recent_events ?? []).map((evt, idx) => (
+                  <div key={idx} className="flex items-start gap-4 p-3 border rounded-lg">
+                    <div
+                      className={`w-2 h-2 rounded-full mt-2 ${
+                        evt.type === "login_success"
+                          ? "bg-secondary"
+                          : evt.type === "token_reuse_detected"
+                          ? "bg-warning"
+                          : "bg-muted"
+                      }`}
+                    ></div>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <p className="font-medium">{evt.type.replace(/_/g, " ")}</p>
+                        <span className="text-sm text-muted-foreground">
+                          {new Date(evt.created_at).toLocaleString()}
+                        </span>
+                      </div>
+                      {evt.message && (
+                        <p className="text-sm text-muted-foreground">{evt.message}</p>
+                      )}
                     </div>
-                    <p className="text-sm text-muted-foreground">priya.sharma@company.co.in from 192.168.1.100</p>
                   </div>
-                </div>
-
-                <div className="flex items-start gap-4 p-3 border rounded-lg">
-                  <div className="w-2 h-2 bg-warning rounded-full mt-2"></div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <p className="font-medium">Failed login attempt</p>
-                      <span className="text-sm text-muted-foreground">1 hour ago</span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">unknown.user@example.com from 203.0.113.1</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-4 p-3 border rounded-lg">
-                  <div className="w-2 h-2 bg-secondary rounded-full mt-2"></div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <p className="font-medium">Password changed</p>
-                      <span className="text-sm text-muted-foreground">3 hours ago</span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">rajesh.kumar@company.co.in</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-4 p-3 border rounded-lg">
-                  <div className="w-2 h-2 bg-secondary rounded-full mt-2"></div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <p className="font-medium">New user created</p>
-                      <span className="text-sm text-muted-foreground">1 day ago</span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      vikram.singh@company.co.in by anita.patel@company.co.in
-                    </p>
-                  </div>
-                </div>
+                ))}
+                {!security?.recent_events?.length && (
+                  <div className="text-sm text-muted-foreground">No recent security events.</div>
+                )}
               </div>
             </CardContent>
           </Card>

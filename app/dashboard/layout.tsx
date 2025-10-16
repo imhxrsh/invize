@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+import { useEffect, useState } from "react"
 
 import {
   SidebarProvider,
@@ -31,6 +32,8 @@ import {
 import { ThemeToggle } from "@/components/theme-toggle"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
+import { logout } from "@/lib/auth"
+import { getProfileContext } from "@/lib/profile"
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: Home },
@@ -51,9 +54,37 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname()
   const router = useRouter()
+  const [userName, setUserName] = useState<string>("")
+  const [userEmail, setUserEmail] = useState<string>("")
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined)
 
-  const handleLogout = () => {
-    // Simulate logout - redirect to login page
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        const ctx = await getProfileContext()
+        if (!mounted) return
+        const user = ctx?.user ?? ctx?.profile?.user ?? null
+        if (user) {
+          setUserName(user.full_name || user.email || "")
+          setUserEmail(user.email || "")
+          setAvatarUrl(user.avatar_url)
+        }
+      } catch (e) {
+        // ignore hydration errors; UI will show placeholders
+      }
+    })()
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  const handleLogout = async () => {
+    try {
+      await logout()
+    } catch (e) {
+      // ignore errors; navigation continues
+    }
     router.push("/")
   }
 
@@ -106,14 +137,25 @@ export default function DashboardLayout({
 
             <div className="flex items-center gap-3 px-3 py-3 border-t border-sidebar-border">
               <Avatar className="h-8 w-8">
-                <AvatarImage src="/diverse-user-avatars.png" alt="User" />
+                {avatarUrl ? (
+                  <AvatarImage src={avatarUrl} alt="User" />
+                ) : (
+                  <AvatarImage src="" alt="User" />
+                )}
                 <AvatarFallback className="bg-primary text-primary-foreground">
-                  <User className="h-4 w-4" />
+                  {userName
+                    ? userName
+                        .split(" ")
+                        .map((n) => n[0])
+                        .join("")
+                        .slice(0, 2)
+                        .toUpperCase()
+                    : <User className="h-4 w-4" />}
                 </AvatarFallback>
               </Avatar>
               <div className="flex flex-col flex-1">
-                <span className="text-sm font-medium text-sidebar-foreground">Harsh Vishwakarma</span>
-                <span className="text-xs text-muted-foreground">harsh@invize.in</span>
+                <span className="text-sm font-medium text-sidebar-foreground">{userName || "User"}</span>
+                <span className="text-xs text-muted-foreground">{userEmail || ""}</span>
               </div>
               <Button
                 variant="ghost"

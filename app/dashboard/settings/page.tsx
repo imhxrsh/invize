@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -13,6 +13,8 @@ import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
 import { Plus, Mail, Database, CreditCard, Zap, Trash2, Edit } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { getProfileContext, updateMe, updatePreferences } from "@/lib/profile"
 
 // Mock data
 const teamMembers = [
@@ -81,16 +83,90 @@ const automationRules = [
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState("profile")
   const [profileData, setProfileData] = useState({
-    name: "Harsh Vishwakarma",
-    email: "harsh@invize.in",
+    name: "",
+    email: "",
     currentPassword: "",
     newPassword: "",
     confirmPassword: "",
   })
+  const [preferences, setPreferences] = useState({
+    theme: "system" as "light" | "dark" | "system",
+    density: "comfortable" as "comfortable" | "compact",
+    locale: "",
+    time_zone: "",
+    notifications_email: true,
+    notifications_push: true,
+  })
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [savingPreferences, setSavingPreferences] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const handleProfileUpdate = (e: React.FormEvent) => {
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        const ctx = await getProfileContext()
+        if (!mounted) return
+        const user = ctx?.user ?? ctx?.profile?.user
+        const prefs = ctx?.preferences ?? ctx?.profile?.preferences
+        if (user) {
+          setProfileData((prev) => ({
+            ...prev,
+            name: user.full_name || "",
+            email: user.email || "",
+          }))
+        }
+        if (prefs) {
+          setPreferences({
+            theme: prefs.theme as any,
+            density: prefs.density as any,
+            locale: prefs.locale || "",
+            time_zone: prefs.time_zone || "",
+            notifications_email: Boolean(prefs.notifications_email),
+            notifications_push: Boolean(prefs.notifications_push),
+          })
+        }
+      } catch (e: any) {
+        setError(e?.message || "Failed to load profile context")
+      }
+    })()
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault()
-    console.log("Profile updated")
+    setSavingProfile(true)
+    setError(null)
+    try {
+      await updateMe({ full_name: profileData.name, locale: preferences.locale, time_zone: preferences.time_zone })
+    } catch (e: any) {
+      setError(e?.message || "Failed to update profile")
+    } finally {
+      setSavingProfile(false)
+    }
+  }
+
+  const handlePreferencesUpdate = async () => {
+    setSavingPreferences(true)
+    setError(null)
+    try {
+      await updatePreferences({
+        theme: preferences.theme,
+        density: preferences.density,
+        locale: preferences.locale,
+        time_zone: preferences.time_zone,
+        notifications: {
+          email: preferences.notifications_email,
+          push: preferences.notifications_push,
+        },
+      })
+    } catch (e: any) {
+      setError(e?.message || "Failed to update preferences")
+    } finally {
+      setSavingPreferences(false)
+    }
   }
 
   const handleInviteUser = () => {
@@ -148,7 +224,7 @@ export default function SettingsPage() {
                       id="email"
                       type="email"
                       value={profileData.email}
-                      onChange={(e) => setProfileData({ ...profileData, email: e.target.value })}
+                      disabled
                     />
                   </div>
                 </div>
@@ -188,12 +264,106 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="flex justify-end">
-                  <Button type="submit" className="bg-primary hover:bg-primary/90">
-                    Save Changes
+                <div className="flex items-center justify-between">
+                  {error && <span className="text-sm text-red-600">{error}</span>}
+                  <Button type="submit" className="bg-primary hover:bg-primary/90" disabled={savingProfile}>
+                    {savingProfile ? "Saving..." : "Save Changes"}
                   </Button>
                 </div>
               </form>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Preferences</CardTitle>
+              <CardDescription>Theme, density, locale, and notifications</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="theme">Theme</Label>
+                  <Select
+                    value={preferences.theme}
+                    onValueChange={(v) => setPreferences((p) => ({ ...p, theme: v as any }))}
+                  >
+                    <SelectTrigger id="theme" className="w-full">
+                      <SelectValue placeholder="Select theme" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="system">System</SelectItem>
+                      <SelectItem value="light">Light</SelectItem>
+                      <SelectItem value="dark">Dark</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="density">Density</Label>
+                  <Select
+                    value={preferences.density}
+                    onValueChange={(v) => setPreferences((p) => ({ ...p, density: v as any }))}
+                  >
+                    <SelectTrigger id="density" className="w-full">
+                      <SelectValue placeholder="Select density" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="comfortable">Comfortable</SelectItem>
+                      <SelectItem value="compact">Compact</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="locale">Locale</Label>
+                  <Input
+                    id="locale"
+                    value={preferences.locale}
+                    onChange={(e) => setPreferences((p) => ({ ...p, locale: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="time_zone">Time Zone</Label>
+                  <Input
+                    id="time_zone"
+                    value={preferences.time_zone}
+                    onChange={(e) => setPreferences((p) => ({ ...p, time_zone: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-base">Email notifications</Label>
+                    <div className="text-sm text-muted-foreground">Send email alerts for important events</div>
+                  </div>
+                  <Switch
+                    checked={preferences.notifications_email}
+                    onCheckedChange={(v) => setPreferences((p) => ({ ...p, notifications_email: v }))}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-base">Push notifications</Label>
+                    <div className="text-sm text-muted-foreground">Enable push notifications</div>
+                  </div>
+                  <Switch
+                    checked={preferences.notifications_push}
+                    onCheckedChange={(v) => setPreferences((p) => ({ ...p, notifications_push: v }))}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end">
+                <Button onClick={handlePreferencesUpdate} className="bg-primary hover:bg-primary/90" disabled={savingPreferences}>
+                  {savingPreferences ? "Saving..." : "Save Preferences"}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
